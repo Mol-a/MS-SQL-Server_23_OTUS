@@ -1,0 +1,149 @@
+/*
+Домашнее задание по курсу MS SQL Server Developer в OTUS.
+Занятие "02 - Оператор SELECT и простые фильтры, JOIN".
+
+Задания выполняются с использованием базы данных WideWorldImporters.
+
+Бэкап БД WideWorldImporters можно скачать отсюда:
+https://github.com/Microsoft/sql-server-samples/releases/download/wide-world-importers-v1.0/WideWorldImporters-Full.bak
+
+Описание WideWorldImporters от Microsoft:
+* https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-what-is
+* https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-oltp-database-catalog
+*/
+
+-- ---------------------------------------------------------------------------
+-- Задание - написать выборки для получения указанных ниже данных.
+-- ---------------------------------------------------------------------------
+
+USE WideWorldImporters
+
+/*
+1. Все товары, в названии которых есть "urgent" или название начинается с "Animal".
+Вывести: ИД товара (StockItemID), наименование товара (StockItemName).
+Таблицы: Warehouse.StockItems.
+*/
+
+Select StockItemID, StockItemName from Warehouse.StockItems
+where StockItemName like '%urgent%' or StockItemName like 'Animal%'
+order by StockItemID 
+
+/*
+2. Поставщиков (Suppliers), у которых не было сделано ни одного заказа (PurchaseOrders).
+Сделать через JOIN, с подзапросом задание принято не будет.
+Вывести: ИД поставщика (SupplierID), наименование поставщика (SupplierName).
+Таблицы: Purchasing.Suppliers, Purchasing.PurchaseOrders.
+По каким колонкам делать JOIN подумайте самостоятельно.
+*/
+--Select * from Purchasing.Suppliers
+--Select * from Purchasing.PurchaseOrders
+--Select SupplierID, count(PurchaseOrderID) from Purchasing.PurchaseOrders
+--group by SupplierID
+Select ps.SupplierID, ps.SupplierName, pp.PurchaseOrderID
+from Purchasing.Suppliers ps left join Purchasing.PurchaseOrders pp --таблицу поставщиков соединяем стаблицей заказов
+on ps.SupplierID=pp.SupplierID 
+where pp.PurchaseOrderID is null --отбираем поставщиков у которых нет данных в таблице хакахов
+order by ps.SupplierID --соритруем по ИД-поставщику
+/*
+3. Заказы (Orders) с ценой товара (UnitPrice) более 100$ 
+либо количеством единиц (Quantity) товара более 20 штук
+и присутствующей датой комплектации всего заказа (PickingCompletedWhen).
+Вывести:
+* OrderID
+* дату заказа (OrderDate) в формате ДД.ММ.ГГГГ
+* название месяца, в котором был сделан заказ
+* номер квартала, в котором был сделан заказ
+* треть года, к которой относится дата заказа (каждая треть по 4 месяца)
+* имя заказчика (Customer)
+Добавьте вариант этого запроса с постраничной выборкой,
+пропустив первую 1000 и отобразив следующие 100 записей.
+
+Сортировка должна быть по номеру квартала, трети года, дате заказа (везде по возрастанию).
+
+Таблицы: Sales.Orders, Sales.OrderLines, Sales.Customers.
+*/
+Select * from Sales.Orders
+Select * from Sales.OrderLines
+Select * from Sales.Customers
+
+--declare @order_date =  
+Select so.OrderID,convert(varchar, so.OrderDate,104) as Date_Order,
+MONTH(so.OrderDate) as MonthName, DATEPART (quarter, so.OrderDate) as Quarter_OrderDate, 
+CASE		WHEN MONTH(so.OrderDate) in (1, 2, 3, 4)--условие для определения номера третьей части года
+			THEN 1
+			WHEN MONTH(so.OrderDate) in (5, 6, 7, 8)
+			THEN 2
+			WHEN MONTH(so.OrderDate) in (9, 10, 11, 12)
+			THEN 3
+			END as Year_OrderDate,
+sc.CustomerName										-- наименование клиента
+from Sales.Orders As so inner join Sales.OrderLines as sol on sol.OrderID=so.OrderID --внутреннее соединение 3-ех таблиц с условиями
+inner join Sales.Customers as sc on sc.CustomerID=so.CustomerID
+where (sol.UnitPrice >1000 or sol.Quantity>20) and sol.PickingCompletedWhen is not null
+order by MonthName, Quarter_OrderDate, Year_OrderDate --сортировка результатов
+OFFSET 1000 ROWS									--пропуст первой 1000 строк и отображение следующих 100 строк
+FETCH NEXT 100 ROWS ONLY
+
+/*
+4. Заказы поставщикам (Purchasing.Suppliers),
+которые должны быть исполнены (ExpectedDeliveryDate) в январе 2013 года
+с доставкой "Air Freight" или "Refrigerated Air Freight" (DeliveryMethodName)
+и которые исполнены (IsOrderFinalized).
+Вывести:
+* способ доставки (DeliveryMethodName) 
+* дата доставки (ExpectedDeliveryDate)
+* имя поставщика
+* имя контактного лица принимавшего заказ (ContactPerson)
+
+Таблицы: Purchasing.Suppliers, Purchasing.PurchaseOrders, Application.DeliveryMethods, Application.People.
+*/
+Select* From Purchasing.Suppliers --SuppliedID,DeliveryMethodID, SupplierName -имя поставщика PrimaryContactPersonID
+Select* From Purchasing.PurchaseOrders --SuppliedID,DeliveryMethodID, ExpectedDeliveryDate,IsOrderFinalized, ContactPersonID
+Select* From Application.DeliveryMethods--DeliveryMethodID,способ доставки (DeliveryMethodName) 
+Select* From Application.People --имя контактного лица принимавшего заказ (PersonID), PreferredName
+
+Select pp.PurchaseOrderID,ad.DeliveryMethodName, pp.ExpectedDeliveryDate,ps.SupplierName,ap.PreferredName
+From Purchasing.PurchaseOrders pp 
+inner join Application.DeliveryMethods ad on pp.DeliveryMethodID=ad.DeliveryMethodID
+left join Purchasing.Suppliers ps on pp.SupplierID=ps.SupplierID
+left join Application.People ap on pp.ContactPersonID=ap.PersonID
+where (MONTH (pp.ExpectedDeliveryDate)=1 
+AND (ad.DeliveryMethodName in ('Air Freight','Refrigerated Air Freight'))
+AND pp.IsOrderFinalized=1)
+order by ad.DeliveryMethodName
+
+
+/*
+5. Десять последних продаж (по дате продажи) с именем клиента и именем сотрудника,
+который оформил заказ (SalespersonPerson).
+Сделать без подзапросов.
+*/
+
+--Select *
+--From Sales.Orders
+--order by OrderDate desc
+
+Select top 10 so.OrderID, sc.CustomerName as [Customer Name], ap.FullName as [Person Name]
+From Sales.Orders so 
+left join Sales.Customers sc on so.CustomerID=sc.CustomerID
+left join Application.People ap on so.SalespersonPersonID=ap.PersonID
+order by so.OrderDate desc, so.OrderID
+
+
+/*
+6. Все ид и имена клиентов и их контактные телефоны,
+которые покупали товар "Chocolate frogs 250g".
+Имя товара смотреть в таблице Warehouse.StockItems.
+*/
+
+Declare @StockItemName nvarchar(100) = 'Chocolate frogs 250g', @StockItemID int; --создаем переменные 
+
+Set @StockItemID = (SELECT StockItemID FROM Warehouse.StockItems WHERE StockItemName = @StockItemName)--записываем в int переменную условие отбора
+
+Select distinct
+sc.CustomerID ,sc.CustomerName ,sc.PhoneNumber
+From Warehouse.StockItems wsi
+INNER JOIN Sales.OrderLines sol on wsi.StockItemID = sol.StockItemID
+INNER JOIN Sales.Orders so on sol.OrderID = so.OrderID
+INNER JOIN Sales.Customers sc on sc.CustomerID = so.CustomerID
+where wsi.StockItemID = @StockItemID
