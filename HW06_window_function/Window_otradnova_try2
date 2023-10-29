@@ -1,1 +1,181 @@
-Window_otradnova_try2
+--1. Сделать расчет суммы продаж нарастающим итогом по месяцам с 2015 года
+--(в рамках одного месяца он будет одинаковый, нарастать будет в течение времени выборки).
+--Нарастающий итог должен быть без оконной функции.
+
+Select Top 10* From Sales.OrderLines
+--сумма продаж по месяцам
+Select 
+	Year (si.InvoiceDate) [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (si.InvoiceDate) [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.UnitPrice * sil.Quantity) [Total_MonthSales] --Общая сумма продаж за месяц
+From Sales.Invoices as si join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID
+Where Year (si.InvoiceDate) >=2015
+Group by Year (si.InvoiceDate), Month(si.InvoiceDate)
+Order by Year (si.InvoiceDate), Month(si.InvoiceDate)
+--добавить столбец нарастающим итогом
+Select 
+	Year (o.OrderDate) [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (o.OrderDate) [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.UnitPrice * sil.Quantity) [Total_MonthSales], --Общая сумма продаж за месяц
+	(Select SUM(sil2.UnitPrice * sil2.Quantity)
+	From Sales.Orders as o2 join Sales.OrderLines as sil2 on o2.OrderID=sil2.OrderID
+	Where Year (o2.OrderDate) >=2015 and year(o.OrderDate)=year(o2.OrderDate) and month(o.OrderDate)>=month(o2.OrderDate)) [Cummul_Sale]
+From Sales.Orders as o join Sales.OrderLines as sil on o.OrderID=sil.OrderID
+Where Year (o.OrderDate) >=2015
+Group by Year (o.OrderDate), Month(o.OrderDate)
+Order by Year (o.OrderDate), Month(o.OrderDate)
+
+--2. Сделайте расчет суммы нарастающим итогом в предыдущем запросе с помощью оконной функции.
+--Сравните производительность запросов 1 и 2 с помощью set statistics time, io on
+
+Select 
+	Year (o.OrderDate) [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (o.OrderDate) [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.UnitPrice * sil.Quantity) over(partition by Month(o.OrderDate) order by Year (o.OrderDate)) [Total_MonthSales], --Общая сумма продаж за месяц
+	SUM (sil.UnitPrice * sil.Quantity) over(partition by Year (o.OrderDate)order by Month(o.OrderDate))
+From Sales.Orders as o join Sales.OrderLines as sil on o.OrderID=sil.OrderID
+Where Year (o.OrderDate) >=2015
+--Group by Year (o.OrderDate),--Month(o.OrderDate)--, --почему ошибка в добавлении группировки sil.UnitPrice, sil.Quantity???
+Order by Year (o.OrderDate), Month(o.OrderDate)
+
+
+--3.Вывести список 2х самых популярных продуктов (по количеству проданных)
+--в каждом месяце за 2016 год (по 2 самых популярных продукта в каждом месяце).
+
+Select top 10* --StockItemID, Quantity
+from Sales.OrderLines
+
+Select top 10*
+from Sales.Orders
+
+Select  ol.StockItemID, sum(ol.Quantity) [sum_Quantity], month(o.OrderDate) [Month_2016]
+from Sales.OrderLines ol join Sales.Orders o on ol.OrderID=o.OrderID
+
+where year (o.OrderDate)=2016
+group by StockItemID, month(o.OrderDate)
+order by [Month_2016], sum_Quantity desc
+
+WITH ProductMonthSales--количество заказанных товаров по месяцам
+AS (
+    SELECT si.StockItemName, 
+        SUM(il.Quantity) AS [TotalQuantity], 
+        MONTH(i.InvoiceDate) AS [MonthNumber]
+    FROM Sales.InvoiceLines il
+        INNER JOIN [Sales].[Invoices] i ON il.InvoiceID = i.InvoiceID 
+        INNER JOIN Warehouse.StockItems si ON il.StockItemID = si.StockItemID
+	WHERE YEAR(i.InvoiceDate) = 2016
+    GROUP BY si.StockItemName, MONTH(i.InvoiceDate)
+),
+ProductSalesNumbered --
+AS (
+    SELECT ProductMonthSales.StockItemName, 
+        ProductMonthSales.TotalQuantity, 
+        ProductMonthSales.MonthNumber, 
+        ROW_NUMBER() OVER(PARTITION BY ProductMonthSales.MonthNumber ORDER BY ProductMonthSales.TotalQuantity DESC) AS [Num]
+    FROM ProductMonthSales
+)
+SELECT psm.StockItemName, psm.TotalQuantity,psm.MonthNumber
+FROM ProductSalesNumbered psm
+WHERE psm.Num <= 2
+ORDER BY psm.MonthNumber, psm.TotalQuantity DESC;
+
+--4.Функции одним запросом
+--Warehouse.StockItems (ид товара, название, брэнд и цена)--
+
+--Посчитайте по таблице товаров (в вывод также должен попасть ид товара, название, брэнд и цена):
+Select top 10*
+from Warehouse.StockItems as S
+Where S.Brand is not null
+
+Select top 10*
+from Sales.InvoiceLines
+
+Select top 10*
+from[Warehouse].[StockItemHoldings]
+
+Select StockItemID, StockItemName, Brand, UnitPrice,
+--пронумеруйте записи по названию товара, так чтобы при изменении буквы алфавита нумерация начиналась заново
+ROW_NUMBER() OVER(PARTITION BY LEFT(StockItemName, 1) ORDER BY StockItemName) As [NumFirst],
+--посчитайте общее количество товаров и выведете полем в этом же запросе
+Count(*) Over() [Quantity_total]
+--посчитайте общее количество товаров в зависимости от первой буквы названия товара
+,COUNT(*) OVER(PARTITION BY LEFT(StockItemName, 1)) [First_Char_Item]
+--отобразите следующий id товара исходя из того, что порядок отображения товаров по имени
+,LEAD(StockItemID,1,0) OVER(ORDER BY StockItemName) [Next_ID]
+--предыдущий ид товара с тем же порядком отображения (по имени)
+,LAG(StockItemID,1,0) OVER(ORDER BY StockItemName) [Previos_ID]
+--названия товара 2 строки назад, в случае если предыдущей строки нет нужно вывести "No items"
+,LAG(StockItemName,2,'No items') OVER(ORDER BY StockItemName) [Previos_2rows_ItemsName]
+--сформируйте 30 групп товаров по полю вес товара на 1 шт TypicalWeightPerUnit
+,NTILE(30)OVER(Order BY TypicalWeightPerUnit) [GROUP_30]
+from Warehouse.StockItems
+
+--5.Для этой задачи НЕ нужно писать аналог без аналитических функций.
+--По каждому сотруднику выведите последнего клиента, которому сотрудник что-то продал.
+Select top 300*
+from Sales.CustomerTransactions
+Select top 10* 
+from Application.People
+WHERE IsSalesperson =0
+--В результатах должны быть ид и фамилия сотрудника, ид и название клиента, дата продажи, сумму сделки.
+--Вариант 1 (18%)
+SELECT
+r.SalespersonPersonID
+,r.Name_Salesperson
+,r.CustomerID
+,r.Name_Customer
+,r.OrderDate
+,r.Number
+,r.Amount_Sale
+
+FROM(
+	SELECT so.SalespersonPersonID,ap.FullName [Name_Salesperson],aps.CustomerID,aps.CustomerName[Name_Customer], so.OrderDate, so.OrderID,
+	ROW_NUMBER() OVER(PARTITION BY so.SalespersonPersonID ORDER BY so.OrderDate Desc) [Number]
+	,SUM (sil.UnitPrice * sil.Quantity) OVER(PARTITION BY so.SalespersonPersonID ORDER BY so.OrderDate Desc) [Amount_Sale]
+	FROM Sales.Orders so left join Sales.OrderLines sil on so.OrderID=sil.OrderID --cначала объединим таблицы для поиска суммы продажи
+	join Application.People ap	on so.SalespersonPersonID=ap.PersonID --затем объединим таблицы для определния имя продавца
+	join Sales.Customers aps on so.CustomerID=aps.CustomerID --затем объединим таблицы для определния имя покупателя
+	)                                                         -- так как построенное окно нужно в качетсве фильтра, то весь запрос заворачиваем во вложенный запрос.
+AS r
+WHERE r.Number=1
+
+--Вариант 2 (82%)
+SELECT p.PersonID, 
+       p.FullName, 
+       c.CustomerID, 
+       c.CustomerName, 
+       r.TransactionDate, 
+       r.TransactionAmount
+FROM
+(
+    SELECT ct.CustomerID, 
+           i.SalespersonPersonID, 
+           ct.TransactionDate, 
+           ct.TransactionAmount, 
+           ROW_NUMBER() OVER(PARTITION BY SalespersonPersonID ORDER BY TransactionDate DESC) AS [Num]
+    FROM Sales.CustomerTransactions ct
+         INNER JOIN Sales.Invoices i ON ct.InvoiceID = i.InvoiceID
+) AS r
+INNER JOIN Application.People p ON r.SalespersonPersonID = p.PersonID
+INNER JOIN Sales.Customers c ON r.CustomerID = c.CustomerID
+WHERE r.[num] = 1;
+
+--6.Выберите по каждому клиенту два самых дорогих товара, которые он покупал.
+--В результатах должно быть ид клиета, его название, ид товара, цена, дата покупки.
+Select top 300*
+from Sales.CustomerTransactions
+Select top 10* 
+from Application.People
+Where PersonID =838
+
+SELECT r.CustomerID
+	, sc.CustomerName[Name_Customer]
+	, r.TransactionDate
+	, r.TransactionAmount
+FROM(Select ct.CustomerID, ct.TransactionDate, ct.TransactionAmount
+		,ROW_NUMBER() OVER(PARTITION BY ct.CustomerID ORDER BY ct.TransactionAmount Desc) [Number]
+	FROM Sales.CustomerTransactions ct)as r							-- так как построенное окно нужно в качетсве фильтра, то весь запрос заворачиваем во вложенный запрос
+	left join Sales.Customers sc on r.CustomerID=sc.CustomerID --затем объединим таблицы для определения имя клиента
+	Where Number in (1,2)
+
+--Опционально можете для каждого запроса без оконных функций сделать вариант запросов с оконными функциями и сравнить их производительность
