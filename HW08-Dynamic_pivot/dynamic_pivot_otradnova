@@ -1,0 +1,42 @@
+----Динамический pivot
+--Пишем динамический PIVOT.
+--По заданию из занятия "Операторы CROSS APPLY, PIVOT, UNPIVOT".
+--Требуется написать запрос, который в результате своего выполнения
+--формирует сводку по количеству покупок в разрезе клиентов и месяцев.
+--В строках должны быть месяцы (дата начала месяца), в столбцах - клиенты.
+--Нужно написать запрос, который будет генерировать результаты для всех клиентов.
+--Имя клиента указывать полностью из поля CustomerName.
+
+
+
+GO
+
+Declare @dml  AS NVARCHAR (MAX),
+		@CustomerName As NVARCHAR (MAX)
+
+SELECT @CustomerName= ISNULL(@CustomerName + ',','')+
+						QUOTENAME(CustomerName) 
+						From (SELECT DISTINCT CustomerName From Sales.Customers) AS CustomerName
+
+Select @CustomerName AS CustomerName
+ SET @dml=
+	N'SELECT 
+		DATE_MONTH ,
+		'+ @CustomerName +'	FROM
+		(Select
+			ST.CustomerID,
+			ST.CustomerName,
+			COUNT(CT.InvoiceID) as Quantity,
+			CONCAT(''01.'',RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),''.'',YEAR(CT.InvoiceDate)) as DATE_MONTH 
+			FROM Sales.Customers ST join Sales.Invoices as CT on ST.CustomerID=CT.CustomerID
+			GROUP BY ST.CustomerID, CT.CustomerID, ST.CustomerName,
+				YEAR(CT.InvoiceDate),
+				RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),
+				CONCAT(''01.'',RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),''.'',YEAR(CT.InvoiceDate))
+ 		) as Data
+	PIVOT (SUM(Data.Quantity) FOR CustomerName IN ('+ @CustomerName +')) as pivt
+	Order by DATE_MONTH'
+
+SELECT @dml
+
+EXEC sp_executesql @dml
