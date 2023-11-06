@@ -1,1 +1,325 @@
+--
+--SET STATISTICS TIME ON отображает текстовый отчет с информацией о времени компиляции и общем времени выполнения запроса, SET STATISTICS TIME OFF - Выключить
+--CPU time (время ЦП) — время процессора на синтаксический анализ и компиляцию
+--Elapsed time (истекшее время) — общее время, затраченное на синтаксический анализ и компиляцию запроса. Включает в себя время процессора
+--Все значения в миллисекундах.
+--Логические чтения - это основное выводимое статистическое число, используемое настройщиками производительности. Они видят общее число страниц 
+--данных из каждой таблицы, которые необходимы для выполнения запроса.
+--Физическое чтение означает, что страница данных не находилась в буферном пуле во время выполнения запроса и должна быть прочитана с диска. 
+--Физические чтения - это подмножество логических чтений.
 
+Use WideWorldImporters
+Go
+Set statistics io, time on;
+--1. Сделать расчет суммы продаж нарастающим итогом по месяцам с 2015 года
+--(в рамках одного месяца он будет одинаковый, нарастать будет в течение времени выборки).
+--Нарастающий итог должен быть без оконной функции.
+--Select Top 10* From Sales.InvoiceLines
+--Select Top 10* From Sales.Invoices
+
+--первоначалльный ВАРИАНТ 1 для сдачи дз_с исправленными табл
+--Estimeted Subtree Cost 64.6203
+--Query cost 57%
+-- SQL Server Execution Times:
+--   CPU time = 3639 ms,  elapsed time = 4770 ms.
+--SQL Server parse and compile time: 
+--   CPU time = 312 ms, elapsed time = 794 ms.
+--Table 'Invoices'. Scan count 22, logical reads 205794, physical reads 657, page server reads 0, read-ahead reads 120281, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'InvoiceLines'. Scan count 22, logical reads 90307, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+Select 
+	Year (si.InvoiceDate) as [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (si.InvoiceDate) as [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.ExtendedPrice) as [Total_MonthSales], --Общая сумма продаж за месяц
+	(Select SUM(sil2.ExtendedPrice)
+	From Sales.Invoices as si2 join Sales.InvoiceLines as sil2 on si2.InvoiceID=sil2.InvoiceID
+	Where Year (si2.InvoiceDate) >=2015 and year(si.InvoiceDate)=year(si2.InvoiceDate) and month(si.InvoiceDate)>=month(si2.InvoiceDate)) as [Cummul_Sale]
+From Sales.Invoices as si join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID
+Where Year (si.InvoiceDate) >=2015
+Group by Year (si.InvoiceDate), Month(si.InvoiceDate)
+Order by Year (si.InvoiceDate), Month(si.InvoiceDate)
+
+GO
+--ВАРИАНТ 2 сумма продаж по месяцам запишем через CTE
+--Estimeted Subtree Cost 24.8695
+--Query cost 22%
+--SQL Server Execution Times:
+-- CPU time = 780 ms,  elapsed time = 9950 ms.
+--SQL Server parse and compile time: 
+-- CPU time = 114 ms, elapsed time = 114 ms.
+--Table 'Invoices'. Scan count 10, logical reads 23988, physical reads 3, page server reads 0, read-ahead reads 11388, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'InvoiceLines'. Scan count 10, logical reads 10512, physical reads 3, page server reads 0, read-ahead reads 4617, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+WITH SalesMonth AS
+	(SELECT 
+	Year (si.InvoiceDate) as [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (si.InvoiceDate) as [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.ExtendedPrice) as [Total_MonthSales] --Общая сумма продаж за месяц
+From Sales.Invoices as si join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID
+Where Year (si.InvoiceDate) >=2015
+Group by Year (si.InvoiceDate), Month(si.InvoiceDate)
+	)
+SELECT 
+	sm.Year_Sale,
+	sm.Month_Sale,
+	sm.Total_MonthSales,
+	SUM(sil.ExtendedPrice)
+	FROM SalesMonth as sm join Sales.Invoices as si on year(si.InvoiceDate)=sm.Year_Sale and month(si.InvoiceDate)<=sm.Month_Sale join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID 
+Group by sm.Year_Sale,	sm.Month_Sale,	sm.Total_MonthSales
+Order by sm.Year_Sale,	sm.Month_Sale
+
+
+GO
+--ВАРИАНТ 3 Все через CTE
+--Estimeted Subtree Cost 24.8639
+--Query cost 22%
+--Table 'Invoices'. Scan count 10, logical reads 23988, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'InvoiceLines'. Scan count 10, logical reads 10512, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--SQL Server Execution Times:
+--  CPU time = 562 ms,  elapsed time = 208 ms.
+--SQL Server parse and compile time: 
+--  CPU time = 0 ms, elapsed time = 0 ms.
+
+WITH SalesByMonth AS
+	(Select 
+	Year (si.InvoiceDate) as [Year_Sale], -- Год продажи (например, 2015)
+	MONTH (si.InvoiceDate) as [Month_Sale], -- Месяц продажи (например, 4)
+	SUM (sil.ExtendedPrice) as [Total_MonthSales] --Общая сумма продаж за месяц
+From Sales.Invoices as si join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID
+Where Year (si.InvoiceDate) >=2015
+Group by Year (si.InvoiceDate), Month(si.InvoiceDate)
+--Order by Year (si.InvoiceDate), Month(si.InvoiceDate)
+	),
+--добавить столбец нарастающим итогом
+	CummulSale AS
+	(Select 
+	--o2.InvoiceID, 
+	YEAR(o2.InvoiceDate) as YEAR2,
+	MONTH(o2.InvoiceDate) as MONTH2,
+	SUM(sil2.ExtendedPrice) as [CummulSale]
+	From Sales.Invoices as o2 join Sales.InvoiceLines as sil2 on o2.InvoiceID=sil2.InvoiceID
+	Where Year (o2.InvoiceDate) >=2015
+	GROUP BY YEAR(o2.InvoiceDate), MONTH(o2.InvoiceDate)) 
+--Соединяем в результат
+SELECT
+	sbm.Year_Sale,
+	sbm.Month_Sale,
+	sbm.Total_MonthSales,
+	SUM(cs.CummulSale)
+From CummulSale cs
+	join SalesByMonth as sbm on YEAR2=sbm.Year_Sale and MONTH2<=sbm.Month_Sale--
+Where YEAR2>=2015
+GROUP BY sbm.Year_Sale,	sbm.Month_Sale,	sbm.Total_MonthSales
+ORDER BY sbm.Year_Sale
+--Результаты статистики 
+--Worktable или Workfile - 'то означает, что SQL Server использовал, или рассматривал возможность использования, TempDB для временного хранения информации. 
+--Часто этой работой является промежуточная сортировка. Работа, которую выполняет TempDB, записывается с упоминанием Worktable и Workfile.
+--Если это случилось, поищите в плане запроса то, что похоже на сбрасывание в TempDB, и посмотрите, не нужно ли обновить статистику, 
+--чтобы получить лучший план без сбрасывания. Поищите также части запроса, выполняющие TOP с ORDER BY или DISTINCT - это как раз те 
+--операции, которые могут легко перемещать данные в рабочую таблицу, если задействуется много строк. Также посмотрите, нельзя ли 
+--модифицировать эти запросы, чтобы уменьшить число строк перед выполнением операции сортировки.
+
+
+--2. Сделайте расчет суммы нарастающим итогом в предыдущем запросе с помощью оконной функции.
+--Сравните производительность запросов 1 и 2 с помощью set statistics time, io on
+--Query cost 1-64% против 2-36%(т.е. оконные функции производительнее).
+--EstimatedCost 2 query -14,2344
+-- SQL Server Execution Times:
+--   CPU time = 0 ms,  elapsed time = 0 ms.
+--SQL Server parse and compile time: 
+--   CPU time = 266 ms, elapsed time = 325 ms.
+--(17 rows affected)
+--Table 'Invoices'. Scan count 10, logical reads 23988, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'InvoiceLines'. Scan count 10, logical reads 10512, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--(20 rows affected)
+--(1 row affected)
+-- SQL Server Execution Times:
+--   CPU time = 1234 ms,  elapsed time = 902 ms.
+--SQL Server parse and compile time: 
+--   CPU time = 16 ms, elapsed time = 20 ms.
+--(101356 rows affected)
+--Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'InvoiceLines'. Scan count 5, logical reads 5256, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--Table 'Invoices'. Scan count 5, logical reads 11994, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+--(16 rows affected)
+--(1 row affected)
+-- SQL Server Execution Times:
+--   CPU time = 608 ms,  elapsed time = 1502 ms.
+--SQL Server parse and compile time: 
+--   CPU time = 0 ms, elapsed time = 0 ms.
+GO
+Select
+	DATEFROMPARTS(Year (si.InvoiceDate),MONTH (si.InvoiceDate),1)
+	--,Year (si.InvoiceDate) [Year_Sale], -- Год продажи (например, 2015)
+	--MONTH (si.InvoiceDate) [Month_Sale], -- Месяц продажи (например, 4)
+	,sil.ExtendedPrice
+	,SUM (sil.ExtendedPrice) over(partition by DatePart(Month,si.InvoiceDate),Year (si.InvoiceDate) order by Year (si.InvoiceDate)) [Total_MonthSales]--, --Общая сумма продаж за месяц
+	,SUM (sil.ExtendedPrice) over(partition by Year (si.InvoiceDate) order by Month(si.InvoiceDate)--, Year (si.InvoiceDate)--
+	) [Cummul_Sale]
+From Sales.Invoices as si join Sales.InvoiceLines as sil on si.InvoiceID=sil.InvoiceID
+Where Year (si.InvoiceDate) >=2015
+Order by DATEFROMPARTS(Year (si.InvoiceDate),MONTH (si.InvoiceDate),1)
+
+--3.Вывести список 2х самых популярных продуктов (по количеству проданных)
+--в каждом месяце за 2016 год (по 2 самых популярных продукта в каждом месяце).
+
+--Select top 10* --StockItemID, Quantity
+--from Sales.InvoiceLines
+--Select top 10*
+--from Sales.InvoiceLines
+--найдем просто кол-во проданных продуктов в каждом месяце за 2016 год и проранжируем (Подправила таблицы)
+GO
+Select  sil.StockItemID,ws.StockItemName, sum(sil.Quantity) [sum_Quantity], month(si.InvoiceDate) [Month_2016], rank() over(partition by month(si.InvoiceDate) order by sum(sil.Quantity)desc) [Top]
+from Sales.InvoiceLines sil join Sales.Invoices si on sil.InvoiceID=si.InvoiceID 
+join  Warehouse.StockItems ws ON sil.StockItemID = ws.StockItemID
+where year (si.InvoiceDate)=2016
+group by sil.StockItemID, month(si.InvoiceDate), ws.StockItemName
+order by [Month_2016], sum_Quantity desc
+
+--построим запрос по заданию 3 через оконную функцию ----КАКАЯ ЗДЕСЬ БЫЛА ОШИБКА? ИСПОЛЬЗОВАЛА ИЗНАЧАЛЬНО ТАБЛИЦЫ Инвойсов
+GO
+WITH ProductMonthSales--количество заказанных товаров по месяцам
+AS (
+    SELECT si.StockItemName, 
+        SUM(il.Quantity) AS [TotalQuantity], 
+        MONTH(i.InvoiceDate) AS [MonthNumber]
+    FROM Sales.InvoiceLines il
+        INNER JOIN [Sales].[Invoices] i ON il.InvoiceID = i.InvoiceID 
+        INNER JOIN Warehouse.StockItems si ON il.StockItemID = si.StockItemID
+	WHERE YEAR(i.InvoiceDate) = 2016
+    GROUP BY si.StockItemName, MONTH(i.InvoiceDate)
+),
+ProductSalesNumbered --
+AS (
+    SELECT ProductMonthSales.StockItemName, 
+        ProductMonthSales.TotalQuantity, 
+        ProductMonthSales.MonthNumber, 
+        ROW_NUMBER() OVER(PARTITION BY ProductMonthSales.MonthNumber ORDER BY ProductMonthSales.TotalQuantity DESC) AS [Num]
+    FROM ProductMonthSales
+)
+SELECT psm.StockItemName, psm.TotalQuantity,psm.MonthNumber
+FROM ProductSalesNumbered psm
+WHERE psm.Num <= 2
+ORDER BY psm.MonthNumber, psm.TotalQuantity DESC;
+
+--4.Функции одним запросом
+--Таблицы для определения даннх
+--Warehouse.StockItems (ид товара, название, брэнд и цена)--
+--Посчитайте по таблице товаров (в вывод также должен попасть ид товара, название, брэнд и цена):
+--Select top 10*
+--from Warehouse.StockItems as S
+--Where S.Brand is not null
+--Select top 10*
+--from Sales.InvoiceLines
+--Select top 10*
+--from[Warehouse].[StockItemHoldings]
+
+--Выполнение запроса по заданию 4 (добавила сортировку по-имени)
+GO
+Select StockItemID, StockItemName, Brand, UnitPrice,
+--пронумеруйте записи по названию товара, так чтобы при изменении буквы алфавита нумерация начиналась заново
+ROW_NUMBER() OVER(PARTITION BY LEFT(StockItemName, 1) ORDER BY StockItemName) As [NumFirst],
+--посчитайте общее количество товаров и выведете полем в этом же запросе
+Count(*) Over() [Quantity_total]
+--посчитайте общее количество товаров в зависимости от первой буквы названия товара
+,COUNT(*) OVER(PARTITION BY LEFT(StockItemName, 1)) [First_Char_Item]
+--отобразите следующий id товара исходя из того, что порядок отображения товаров по имени
+,LEAD(StockItemID,1,0) OVER(ORDER BY StockItemName) [Next_ID]
+--предыдущий ид товара с тем же порядком отображения (по имени)
+,LAG(StockItemID,1,0) OVER(ORDER BY StockItemName) [Previos_ID]
+--названия товара 2 строки назад, в случае если предыдущей строки нет нужно вывести "No items"
+,LAG(StockItemName,2,'No items') OVER(ORDER BY StockItemName) [Previos_2rows_ItemsName]
+--сформируйте 30 групп товаров по полю вес товара на 1 шт TypicalWeightPerUnit
+,NTILE(30)OVER(Order BY TypicalWeightPerUnit) [GROUP_30]
+from Warehouse.StockItems
+Order BY StockItemName
+
+--5.Для этой задачи НЕ нужно писать аналог без аналитических функций.
+
+--Таблицы для определения даннх
+--Select top 300*
+--from Sales.CustomerTransactions
+--Select top 10* 
+--from Application.People
+--WHERE IsSalesperson =0
+
+--По каждому сотруднику выведите последнего клиента, которому сотрудник что-то продал.
+--В результатах должны быть ид и фамилия сотрудника, ид и название клиента, дата продажи, сумму сделки.
+
+--Вариант 1 (Query cost 46%) ESC -14.4656 
+--SQL Server Execution Times: CPU time = 0 ms,  elapsed time = 0 ms.
+--SQL Server parse and compile time: CPU time = 47 ms, elapsed time = 90 ms.. Второй вариант забирает меньше ресурса и быстрее обрабатывает запрос
+GO
+SELECT
+r.SalespersonPersonID
+,r.Name_Salesperson
+,r.CustomerID
+,r.Name_Customer
+,r.InvoiceDate
+,r.Number
+,r.Amount_Sale
+
+FROM(
+	SELECT so.SalespersonPersonID,ap.FullName [Name_Salesperson],aps.CustomerID,aps.CustomerName[Name_Customer], so.InvoiceDate, so.InvoiceID,
+	ROW_NUMBER() OVER(PARTITION BY so.SalespersonPersonID ORDER BY so.InvoiceDate Desc) [Number]
+	,SUM (sil.ExtendedPrice) OVER(PARTITION BY so.SalespersonPersonID ORDER BY so.InvoiceDate desc, so.InvoiceID  Desc) [Amount_Sale]
+	FROM Sales.Invoices so left join Sales.InvoiceLines sil on so.InvoiceID=sil.InvoiceID --cначала объединим таблицы для поиска суммы продажи
+	join Application.People ap	on so.SalespersonPersonID=ap.PersonID --затем объединим таблицы для определния имя продавца
+	join Sales.Customers aps on so.CustomerID=aps.CustomerID --затем объединим таблицы для определния имя покупателя
+	)                                                         -- так как построенное окно нужно в качетсве фильтра, то весь запрос заворачиваем во вложенный запрос.
+AS r
+WHERE r.Number=1
+
+--Вариант 2 (Query cost - 54%)ESC -16.6855
+--SQL Server Execution Times:   CPU time = 625 ms,  elapsed time = 930 ms.
+--SQL Server parse and compile time:  CPU time = 30 ms, elapsed time = 30 ms.
+GO
+SELECT p.PersonID, 
+       p.FullName, 
+       c.CustomerID, 
+       c.CustomerName, 
+       r.TransactionDate, 
+       r.TransactionAmount
+FROM
+(
+    SELECT i.CustomerID, 
+           i.SalespersonPersonID, 
+           ct.TransactionDate, 
+		   ct.InvoiceID,
+           ct.TransactionAmount, 
+           ROW_NUMBER() OVER(PARTITION BY SalespersonPersonID ORDER BY TransactionDate DESC,  ct.InvoiceID desc) AS [Num]
+    FROM Sales.CustomerTransactions ct
+         INNER JOIN Sales.Invoices i ON ct.InvoiceID = i.InvoiceID
+) AS r
+INNER JOIN Application.People p ON r.SalespersonPersonID = p.PersonID
+INNER JOIN Sales.Customers c ON r.CustomerID = c.CustomerID
+WHERE r.[num] = 1;
+
+--6.Выберите по каждому клиенту два самых дорогих товара, которые он покупал.
+--В результатах должно быть ид клиета, его название, ид товара, цена, дата покупки.
+--Select top 300*
+--from Sales.CustomersTransactions
+--Select top 10* 
+--from Application.People
+--Where PersonID =838
+
+--Исправление запроса ппо заданию 6
+--Поправила таблицы и вывела доп ид товара
+--ESC -14.6457
+GO 
+WITH WindowFilter As
+	(Select si.CustomerID, si.InvoiceDate, sil.StockItemID, sil.ExtendedPrice
+		,rank() OVER(PARTITION BY si.CustomerID ORDER BY sil.ExtendedPrice Desc) [Number]
+	FROM Sales.Invoices si join Sales.InvoiceLines sil on si.InvoiceID=sil.InvoiceID)
+SELECT wf.CustomerID
+	, sc.CustomerName[Name_Customer]
+	, wf.StockItemID
+	, wf.InvoiceDate
+	, wf.ExtendedPrice
+FROM WindowFilter wf 					-- так как построенное окно нужно в качетсве фильтра, то весь запрос заворачиваем во вложенный запрос
+	left join Sales.Customers sc on wf.CustomerID=sc.CustomerID --затем объединим таблицы для определения имя клиента
+	Where Number in (1,2)
+
+Set statistics io, time off;
+--Опционально можете для каждого запроса без оконных функций сделать вариант запросов с оконными функциями и сравнить их производительность
