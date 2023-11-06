@@ -1,0 +1,138 @@
+--------------------ВЫПОЛНЕНИЕ ЗАДАНИЙ---------------------------------------------------------------------------------------
+/*
+1. Требуется написать запрос, который в результате своего выполнения 
+формирует сводку по количеству покупок в разрезе клиентов и месяцев.
+В строках должны быть месяцы (дата начала месяца), в столбцах - клиенты.
+
+Клиентов взять с ID 2-6, это все подразделение Tailspin Toys.
+Имя клиента нужно поменять так чтобы осталось только уточнение.
+Например, исходное значение "Tailspin Toys (Gasport, NY)" - вы выводите только "Gasport, NY".
+Дата должна иметь формат dd.mm.yyyy, например, 25.12.2019.
+
+Пример, как должны выглядеть результаты:
+-------------+--------------------+--------------------+-------------+--------------+------------
+InvoiceMonth | Peeples Valley, AZ | Medicine Lodge, KS | Gasport, NY | Sylvanite, MT | Jessie, ND
+-------------+--------------------+--------------------+-------------+--------------+------------
+01.01.2013   |      3             |        1           |      4      |      2        |     2
+01.02.2013   |      7             |        3           |      4      |      2        |     1
+-------------+--------------------+--------------------+-------------+--------------+------------
+*/
+--Задание 1 
+GO
+WITH ClientCTE (CustomerID, CustomerName,Short_name)  
+AS
+(	
+	Select 
+	CustomerID
+	,CustomerName
+	,SUBSTRING(CustomerName,LEN(LEFT(CustomerName,CHARINDEX('(', CustomerName)+1)),LEN(CustomerName) - LEN(LEFT(CustomerName,CHARINDEX('(', CustomerName))) - LEN(RIGHT(CustomerName,CHARINDEX(')', (REVERSE(CustomerName)))))) as Short_name 
+	From Sales.Customers 
+	ORDER BY CustomerID  OFFSET 1 ROWS FETCH NEXT 5 ROWS ONLY
+) -- отобрали клиенты ID 2-6
+SELECT *
+FROM(Select
+		--ClientCTE.CustomerID,
+		ClientCTE.Short_name as SN, 
+		--CT.CustomerID, 
+		COUNT(CT.InvoiceID) as  Quantity,
+		--YEAR(CT.InvoiceDate), 
+		--RIGHT('00' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2) as[month]--месяц в числовом выражении 01, 02 и тд,
+		CONCAT('01.',RIGHT('00' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),'.',YEAR(CT.InvoiceDate))as date --дата в формате дд.мм.гггг
+	FROM ClientCTE  join Sales.Invoices as CT
+	on ClientCTE.CustomerID=CT.CustomerID
+	GROUP BY ClientCTE.CustomerID,CT.CustomerID,
+		YEAR(CT.InvoiceDate),
+		RIGHT('00' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),
+		ClientCTE.Short_name,
+		CONCAT('01.',RIGHT('00' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),'.',YEAR(CT.InvoiceDate))
+	) as Data
+PIVOT (SUM(Data.Quantity) For Data.SN IN([Peeples Valley, AZ], [Medicine Lodge, KS],[Gasport, NY],[Sylvanite, MT], [Jessie, ND]))as pvt
+Order by date
+
+
+
+/*
+2. Для всех клиентов с именем, в котором есть "Tailspin Toys"
+вывести все адреса, которые есть в таблице, в одной колонке.
+
+Пример результата:
+----------------------------+--------------------
+CustomerName                | AddressLine
+----------------------------+--------------------
+Tailspin Toys (Head Office) | Shop 38
+Tailspin Toys (Head Office) | 1877 Mittal Road
+Tailspin Toys (Head Office) | PO Box 8975
+Tailspin Toys (Head Office) | Ribeiroville
+----------------------------+--------------------
+*/
+--SELECT top 10* FROM Sales.Customers
+--найдем нужные поля таблицы
+GO
+SELECT CustomerID, CustomerName, DeliveryAddressLine1, DeliveryAddressLine2, PostalAddressLine1, PostalAddressLine2 FROM Sales.Customers
+Where CustomerName Like '%Tailspin Toys%'
+--unpivot найдет результат
+GO
+SELECT *
+	FROM(
+		SELECT CustomerID
+		, CustomerName
+		, DeliveryAddressLine1
+		, DeliveryAddressLine2
+		, PostalAddressLine1
+		, PostalAddressLine2 FROM Sales.Customers
+		Where CustomerName Like '%Tailspin Toys%'	
+		) AS Customers
+	UNPIVOT (AddressLine FOR Name IN (DeliveryAddressLine1, DeliveryAddressLine2, PostalAddressLine1, PostalAddressLine2)) AS unpt;
+
+/*
+3. В таблице стран (Application.Countries) есть поля с цифровым кодом страны и с буквенным.
+Сделайте выборку ИД страны, названия и ее кода так, 
+чтобы в поле с кодом был либо цифровой либо буквенный код.
+
+Пример результата:
+--------------------------------
+CountryId | CountryName | Code
+----------+-------------+-------
+1         | Afghanistan | AFG
+1         | Afghanistan | 4
+3         | Albania     | ALB
+3         | Albania     | 8
+----------+-------------+-------
+*/
+GO
+SELECT CountryID, CountryName, IsoAlpha3Code, IsoNumericCode FROM Application.Countries--IsoNumericCode, IsoAlpha3Code CountryID, CountryName
+--unpivot
+GO
+SELECT *
+	FROM(
+		SELECT CountryID
+		, CountryName
+		, CAST(IsoAlpha3Code AS NVARCHAR) AS TextAlphaCode --почему необходимо второй раз приводить IsoAlpha3Code к типу данных nvarchar?
+		, CAST(IsoNumericCode AS NVARCHAR) AS TextNumericCode FROM Application.Countries
+		) AS Country
+	UNPIVOT (Code FOR Name IN (TextAlphaCode, TextNumericCode)) AS unpt;
+
+/*
+4. Выберите по каждому клиенту два самых дорогих товара, которые он покупал.
+В результатах должно быть ид клиета, его название, ид товара, цена, дата покупки.
+*/
+
+--Сделала на основе уже написанного кода выбору ИД клиента, его названия, ид товара + цена + дата покупки = информация о товаре так,
+--чтобы информация о товаре была в одном столбце
+
+GO 
+WITH WindowFilter As
+	(Select si.CustomerID, si.InvoiceDate, sil.StockItemID, sil.ExtendedPrice
+		,rank() OVER(PARTITION BY si.CustomerID ORDER BY sil.ExtendedPrice Desc) [Number]
+	FROM Sales.Invoices si join Sales.InvoiceLines sil on si.InvoiceID=sil.InvoiceID)
+SELECT *
+	FROM(
+		SELECT wf.CustomerID
+		, sc.CustomerName[Name_Customer]
+		, CAST(wf.StockItemID AS nvarchar) As StockItemID
+		, CAST(wf.InvoiceDate AS nvarchar) As InvoiceDate
+		, CAST(wf.ExtendedPrice AS nvarchar) As ExtendedPrice
+		FROM WindowFilter wf 					-- так как построенное окно нужно в качетсве фильтра, то весь запрос заворачиваем во вложенный запрос
+		left join Sales.Customers sc on wf.CustomerID=sc.CustomerID --затем объединим таблицы для определения имя клиента
+		Where Number in (1,2)) AS GoldenItem
+	UNPIVOT (InformationItem FOR Name IN(StockItemID,InvoiceDate,ExtendedPrice)) AS unpt
