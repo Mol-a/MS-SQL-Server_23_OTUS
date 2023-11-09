@@ -1,0 +1,345 @@
+
+Занятие "08 - Выборки из XML и JSON полей".
+
+Задания выполняются с использованием базы данных WideWorldImporters.
+
+Бэкап БД можно скачать отсюда:
+https://github.com/Microsoft/sql-server-samples/releases/tag/wide-world-importers-v1.0
+Нужен WideWorldImporters-Full.bak
+
+Описание WideWorldImporters от Microsoft:
+* https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-what-is
+* https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-oltp-database-catalog
+*/
+
+-- ---------------------------------------------------------------------------
+-- Задание - написать выборки для получения указанных ниже данных.
+-- ---------------------------------------------------------------------------
+
+USE WideWorldImporters;
+
+/*
+Примечания к заданиям 1, 2:
+* Если с выгрузкой в файл будут проблемы, то можно сделать просто SELECT c результатом в виде XML. 
+* Если у вас в проекте предусмотрен экспорт/импорт в XML, то можете взять свой XML и свои таблицы.
+* Если с этим XML вам будет скучно, то можете взять любые открытые данные и импортировать их в таблицы (например, с https://data.gov.ru).
+* Пример экспорта/импорта в файл https://docs.microsoft.com/en-us/sql/relational-databases/import-export/examples-of-bulk-import-and-export-of-xml-documents-sql-server
+*/
+
+
+/*
+1. В личном кабинете есть файл StockItems.xml.
+Это данные из таблицы Warehouse.StockItems.
+Преобразовать эти данные в плоскую таблицу с полями, аналогичными Warehouse.StockItems.
+Поля: StockItemName, SupplierID, UnitPackageID, OuterPackageID, QuantityPerOuter, TypicalWeightPerUnit, LeadTimeDays, IsChillerStock, TaxRate, UnitPrice 
+
+Загрузить эти данные в таблицу Warehouse.StockItems: 
+существующие записи в таблице обновить, отсутствующие добавить (сопоставлять записи по полю StockItemName). 
+
+Сделать два варианта: с помощью OPENXML и через XQuery.
+*/
+----------------------------------------------------------------Вариант OPENXML
+
+--Переменная в которую считаем файл XML
+DECLARE @xmlStockItems XML;
+
+--Считываем XML-файл в переменную
+SELECT  @xmlStockItems =BulkColumn
+FROM OPENROWSET
+(BULK 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\StockItems.xml',
+SINGLE_CLOB
+) As data;
+
+SELECT @xmlStockItems as [@xmlStockItems];
+
+DECLARE @docHandle INT;
+EXEC sp_xml_preparedocument @docHandle OUTPUT,@xmlStockItems 
+
+SELECT @docHandle AS docHandle;
+
+SELECT *
+FROM OPENXML(@docHandle, N'/StockItems/Item')
+WITH ( 
+--Поля: StockItemName, SupplierID, UnitPackageID, OuterPackageID, QuantityPerOuter, TypicalWeightPerUnit, LeadTimeDays, IsChillerStock, TaxRate, UnitPrice 
+
+	[StockItemName] NVARCHAR(100)  '@Name',
+	[SupplierID] INT 'SupplierID',
+	[UnitPackageID] INT 'Package/UnitPackageID',
+	[OuterPackageID] INT 'Package/OuterPackageID',
+	[QuantityPerOuter] INT 'Package/QuantityPerOuter',
+	[TypicalWeightPerUnit] DECIMAL (18,3) 'Package/TypicalWeightPerUnit',
+	[LeadTimeDays] INT 'LeadTimeDays',
+	[IsChillerStock] BIT 'IsChillerStock',
+	[TaxRate] DECIMAL (18,3) 'TaxRate',
+	[UnitPrice] DECIMAL (18,2) 'UnitPrice');
+
+-- можно вставить результат в таблицу
+DROP TABLE IF EXISTS #StockItem;
+
+CREATE TABLE #StockItem(
+	[StockItemName] NVARCHAR(100),
+	[SupplierID] INT,
+	[UnitPackageID] INT,
+	[OuterPackageID] INT,
+	[QuantityPerOuter] INT,
+	[TypicalWeightPerUnit] DECIMAL (18,3),
+	[LeadTimeDays] INT,
+	[IsChillerStock] BIT,
+	[TaxRate] DECIMAL (18,3),
+	[UnitPrice] DECIMAL (18,2));
+
+INSERT INTO #StockItem
+SELECT *
+FROM OPENXML(@docHandle, N'/StockItems/Item')
+WITH ( 
+	[StockItemName] NVARCHAR(100)  '@Name',
+	[SupplierID] INT 'SupplierID',
+	[UnitPackageID] INT 'Package/UnitPackageID',
+	[OuterPackageID] INT 'Package/OuterPackageID',
+	[QuantityPerOuter] INT 'Package/QuantityPerOuter',
+	[TypicalWeightPerUnit] DECIMAL (18,3) 'Package/TypicalWeightPerUnit',
+	[LeadTimeDays] INT 'LeadTimeDays',
+	[IsChillerStock] BIT 'IsChillerStock',
+	[TaxRate] DECIMAL (18,3) 'TaxRate',
+	[UnitPrice] DECIMAL (18,2) 'UnitPrice');
+
+SELECT * FROM #StockItem;
+--Загрузить эти данные в таблицу Warehouse.StockItems: 
+--существующие записи в таблице обновить, отсутствующие добавить (сопоставлять записи по полю StockItemName). 
+SELECT top (10)* FROM Warehouse.StockItems
+
+MERGE Warehouse.StockItems t 
+    USING #StockItem s
+--ON (s.StockItemName COLLATE Cyrillic_General_CI_AS = t.StockItemName COLLATE Cyrillic_General_CI_AS)
+ON (s.StockItemName COLLATE Latin1_General_100_CI_AS = t.StockItemName COLLATE Latin1_General_100_CI_AS)
+WHEN MATCHED
+    THEN UPDATE SET 
+--		t.CustomerID = s.CustomerID
+--       t.StockItemName = s.StockItemName,
+        t.SupplierID = s.SupplierID,
+		t.UnitPackageID = s.UnitPackageID,
+		t.OuterPackageID = s.OuterPackageID,
+		t.QuantityPerOuter = s.QuantityPerOuter,
+		t.TypicalWeightPerUnit = s.TypicalWeightPerUnit,
+		t.LeadTimeDays = s.LeadTimeDays,
+		t.IsChillerStock =s.IsChillerStock,
+		t.TaxRate =s.TaxRate,
+		t.UnitPrice =s.UnitPrice,
+		t.LastEditedBy = 1
+WHEN NOT MATCHED BY TARGET 
+    THEN INSERT (StockItemName, SupplierID, UnitPackageID, OuterPackageID,QuantityPerOuter, TypicalWeightPerUnit,LeadTimeDays,IsChillerStock,TaxRate, UnitPrice, LastEditedBy)
+         VALUES (s.StockItemName, s.SupplierID, s.UnitPackageID, s.OuterPackageID, s.QuantityPerOuter, s.TypicalWeightPerUnit, s.LeadTimeDays, s.IsChillerStock, s.TaxRate,s.UnitPrice, 1);
+--WHEN NOT MATCHED BY SOURCE 
+--    THEN DELETE;
+SELECT * FROM #StockItem;
+SELECT * FROM Warehouse.StockItems --было 4 строки, они обновились и добавились две строки "The Gu" red shirt XML tag-shirt (Black)3XXL, Develloper joke mug (Yelow)
+WHERE StockItemName like '%Dinosaur%'
+
+--Анализ кодировки базы данных, таблицы, столбцов
+SELECT DATABASEPROPERTYEX('WideWorldImporters;', 'Collation') AS DatabaseCollation;
+SELECT 
+    t.name AS TableName,
+    c.name AS ColumnName,
+    c.collation_name AS ColumnCollation
+FROM sys.tables t
+INNER JOIN sys.columns c ON t.object_id = c.object_id
+WHERE t.name = '#StockItem' and c.name = 'StockItemName';
+
+-- Надо удалить handle
+EXEC sp_xml_removedocument @docHandle;
+
+SELECT * FROM #StockItem;
+
+DROP TABLE IF EXISTS #StockItem;
+GO
+-------------------------------------------------------------------Вариант XQuery
+
+DECLARE @x XML;
+SET @x = ( 
+  SELECT * FROM OPENROWSET
+  (BULK 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\StockItems.xml',
+   SINGLE_CLOB) AS d);
+
+-- value(XQuery/XPath, Type) - возвращает скалярное (единичное) значение
+-- query(XQuery/XPath) - возвращает XML
+-- exists(XQuery/XPath) - проверяет есть ли данные; 0 - not exists, 1 - exists
+
+GO
+DECLARE @x XML;
+SET @x = ( 
+  SELECT * FROM OPENROWSET
+  (BULK 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\StockItems.xml',
+   SINGLE_CLOB) AS d);
+
+
+SELECT 
+	@x.query('(/StockItems/Item/SupplierID)') AS [SupplierID],
+	   @x.value('(/StockItems/Item/SupplierID)[1]', 'int') AS [SupplierID],
+	    @x.value('(/StockItems/Item/Package/UnitPackageID)[1]', 'INT') AS [UnitPackageID],
+		@x.value('(/StockItems/Item/Package/OuterPackageID)[1]', 'INT') AS [OuterPackageID],
+		@x.value('(/StockItems/Item/Package/QuantityPerOuter)[1]', 'DECIMAL(18, 2)') AS [QuantityPerOuter],
+		@x.value('(/StockItems/Item/Package/TypicalWeightPerUnit)[1]', 'DECIMAL(18, 2)') AS [TypicalWeightPerUnit],
+		@x.value('(/StockItems/Item/LeadTimeDays)[1]', 'INT') AS [LeadTimeDays],
+		@x.value('(/StockItems/Item/IsChillerStock)[1]', 'BIT') AS [IsChillerStock],
+		@x.value('(/StockItems/Item/TaxRate)[1]', 'DECIMAL(18, 2)') AS [TaxRate],
+		@x.value('(/StockItems/Item/UnitPrice)[1]', 'DECIMAL(18, 2)') AS [UnitPrice]
+	
+
+DROP TABLE IF EXISTS #TempStockItems2;
+-- Создание временной таблицы для XML данных
+CREATE TABLE #TempStockItems2 (
+    StockItemName NVARCHAR(MAX),
+    SupplierID INT,
+    UnitPackageID INT,
+    OuterPackageID INT,
+    QuantityPerOuter DECIMAL(18, 2),
+    TypicalWeightPerUnit DECIMAL(18, 2),
+    LeadTimeDays INT,
+    IsChillerStock BIT,
+    TaxRate DECIMAL(18, 2),
+    UnitPrice DECIMAL(18, 2)
+);
+
+-- Импорт данных из XML
+INSERT INTO #TempStockItems2
+SELECT
+    StockItem2.value('(@Name)[1]', 'NVARCHAR(MAX)'),
+    StockItem2.value('(SupplierID)[1]', 'INT'),
+    StockItem2.value('(Package/UnitPackageID)[1]', 'INT'),
+    StockItem2.value('(Package/OuterPackageID)[1]', 'INT'),
+    StockItem2.value('(Package/QuantityPerOuter)[1]', 'DECIMAL(18, 2)'),
+    StockItem2.value('(Package/TypicalWeightPerUnit)[1]', 'DECIMAL(18, 2)'),
+    StockItem2.value('(LeadTimeDays)[1]', 'INT'),
+    StockItem2.value('(IsChillerStock)[1]', 'BIT'),
+    StockItem2.value('(TaxRate)[1]', 'DECIMAL(18, 2)'),
+    StockItem2.value('(UnitPrice)[1]', 'DECIMAL(18, 2)')
+FROM @x.nodes('/StockItems/Item') AS T(StockItem2);
+ 
+SELECT * FROM #TempStockItems2
+--обновление аналогично по Варианту 1
+GO
+-- nodes(XQuery/XPath) - возвращает представление строк для XML
+-- Можно использовать вместо OPENXML
+
+
+
+--2. Выгрузить данные из таблицы StockItems в такой же xml-файл, как StockItems.xml
+
+EXEC sp_configure 'show advanced options', 1;
+GO
+
+RECONFIGURE;
+GO
+
+EXEC sp_configure 'xp_cmdshell',1;
+GO
+
+RECONFIGURE;
+GO
+
+GO
+-- Создание XML файла с данными из таблицы StockItems
+DECLARE @xml NVARCHAR(MAX);
+
+-- Выбор данных из таблицы StockItems и формирование XML
+SELECT 
+    StockItemName,
+    SupplierID,
+    UnitPackageID,
+    OuterPackageID,
+    QuantityPerOuter,
+    TypicalWeightPerUnit,
+    LeadTimeDays,
+    IsChillerStock,
+    TaxRate,
+    UnitPrice
+INTO #TempStockItems
+FROM Warehouse.StockItems;
+
+-- Создание XML из временной таблицы
+SET @xml = (
+    SELECT
+        StockItemName AS 'StockItem/StockItemName',
+        SupplierID AS 'StockItem/SupplierID',
+        UnitPackageID AS 'StockItem/UnitPackageID',
+        OuterPackageID AS 'StockItem/OuterPackageID',
+        QuantityPerOuter AS 'StockItem/QuantityPerOuter',
+        TypicalWeightPerUnit AS 'StockItem/TypicalWeightPerUnit',
+        LeadTimeDays AS 'StockItem/LeadTimeDays',
+        IsChillerStock AS 'StockItem/IsChillerStock',
+        TaxRate AS 'StockItem/TaxRate',
+        UnitPrice AS 'StockItem/UnitPrice'
+    FROM #TempStockItems
+    FOR XML PATH('StockItemsXML'), ROOT('StockItems')
+);
+--Проверим все ли записалось в переменную
+SELECT @xml
+
+--SELECT *FROM #TempStockItems;
+
+-- Сохранение XML в файл
+DECLARE @xmlFileName NVARCHAR(255) = 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\Dafi.xml';
+-- Использование bcp для экспорта данных в файл XML
+DECLARE @xmlDataString NVARCHAR(MAX);
+-- Преобразование XML в строку
+SET @xmlDataString = CAST(@xml AS NVARCHAR(MAX));
+
+
+-- Составление команды bcp для экспорта данных в XML
+DECLARE @bcpCommand NVARCHAR(4000);
+SET @bcpCommand = 'bcp "'+ @xmlDataString +' "out "' + @xmlFileName + '"-S DESKTOP-TFUHS64 -T -c ';
+
+-- Выполнение команды bcp
+EXEC xp_cmdshell @bcpCommand;
+-- Удаление временной таблицы
+DROP TABLE #TempStockItems;
+--------------------------------------------ПОДСКАЖИТЕ ПОЧЕМУ УКАЗАННЫЙ КОД НЕ СОЗДАЕТ ФАЙЛ XML, ---НЕ ПОНИМАЮ
+
+/*
+3. В таблице Warehouse.StockItems в колонке CustomFields есть данные в JSON.
+Написать SELECT для вывода:
+- StockItemID
+- StockItemName
+- CountryOfManufacture (из CustomFields)
+- FirstTag (из поля CustomFields, первое значение из массива Tags)
+*/
+
+DECLARE @json NVARCHAR(MAX)
+
+SELECT 
+	StockItemID,
+    StockItemName,
+    JSON_VALUE(CustomFields, '$.CountryOfManufacture') AS CountryOfManufacture,
+    JSON_VALUE(CustomFields, '$.Tags[0]') AS FirstTag,
+	JSON_VALUE(CustomFields, '$.Tags[1]') AS SecondtTag
+FROM Warehouse.StockItems
+
+
+/*
+4. Найти в StockItems строки, где есть тэг "Vintage".
+Вывести: 
+- StockItemID
+- StockItemName
+- (опционально) все теги (из CustomFields) через запятую в одном поле
+
+Тэги искать в поле CustomFields, а не в Tags.
+Запрос написать через функции работы с JSON.
+Для поиска использовать равенство, использовать LIKE запрещено.
+
+Должно быть в таком виде:
+... where ... = 'Vintage'
+
+Так принято не будет:
+... where ... Tags like '%Vintage%'
+... where ... CustomFields like '%Vintage%' 
+*/
+SELECT CustomFields FROM Warehouse.StockItems;
+SELECT
+    StockItemID,
+    StockItemName,
+	Tag.Value AS Tag
+FROM
+    Warehouse.StockItems
+CROSS APPLY OPENJSON(CustomFields, '$.Tags') AS Tag
+WHERE
+    Tag.Value = 'Vintage';
