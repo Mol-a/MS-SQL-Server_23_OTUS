@@ -40,3 +40,44 @@ Select @CustomerName AS CustomerName
 SELECT @dml
 
 EXEC sp_executesql @dml
+
+
+---------------------------------------TRY 2-------------------------------------------------------
+
+---Убрала из кода ST.CustomerID, ST.CustomerID, CT.CustomerID----
+GO
+
+Declare @dml  AS NVARCHAR (4000),
+		@CustomerName As NVARCHAR (4000)
+
+SELECT @CustomerName= ISNULL(@CustomerName + ',','')+
+						QUOTENAME(CustomerName) 
+						From (SELECT DISTINCT CustomerName From Sales.Customers) AS CustomerName
+
+Select @CustomerName AS CustomerName
+ SET @dml=
+	N'SELECT 
+		DATE_MONTH ,
+		'+ @CustomerName +'	FROM
+		(Select			
+			ST.CustomerName,
+			COUNT(CT.InvoiceID) as Quantity,
+			CONCAT(''01.'',RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),''.'',YEAR(CT.InvoiceDate)) as DATE_MONTH 
+			FROM Sales.Customers ST join Sales.Invoices as CT on ST.CustomerID=CT.CustomerID
+			GROUP BY ST.CustomerName,
+				YEAR(CT.InvoiceDate),
+				RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),
+				CONCAT(''01.'',RIGHT(''00'' + CAST(DATEPART(month, CT.InvoiceDate) as Varchar (10)), 2),''.'',YEAR(CT.InvoiceDate))
+ 		) as Data
+	PIVOT (SUM(Data.Quantity) FOR CustomerName IN ('+ @CustomerName +')) as pivt
+	Order by DATE_MONTH'
+
+SELECT @dml
+
+EXEC sp_executesql @dml
+
+--------------ТЕПЕРЬ ОШИБКА: ------------УКАЗЫВАЕТ, ЧТО строка 'Tailspin To не была закрыта, что вызвало ошибку---подозреваю, что-то не так с размером NVARCHAR
+Msg 105, Level 15, State 1, Line 23
+Unclosed quotation mark after the character string 'Tailspin To'.
+Msg 102, Level 15, State 1, Line 23
+Incorrect syntax near 'Tailspin To'.
