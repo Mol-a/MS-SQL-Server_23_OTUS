@@ -81,3 +81,30 @@ Msg 105, Level 15, State 1, Line 23
 Unclosed quotation mark after the character string 'Tailspin To'.
 Msg 102, Level 15, State 1, Line 23
 Incorrect syntax near 'Tailspin To'.
+--------------------------------------------TRY 3 _SUCCESS-------------------------------------------------
+Declare @dml  AS NVARCHAR (MAX),
+		@CustomerName As NVARCHAR (MAX)
+---сохраняем все имена----
+SELECT @CustomerName= ISNULL(@CustomerName + ',','')+
+						QUOTENAME(CustomerName) 
+						From (SELECT DISTINCT CustomerName From Sales.Customers) AS CustomerName
+---преобразуем в Pivot таблицу
+Select @CustomerName AS CustomerName
+ SET @dml=
+	N'SELECT 
+		DATE_MONTH ,
+		'+ @CustomerName +'	FROM
+		(Select			
+			ST.CustomerName,
+			COUNT(CT.InvoiceID) as Quantity,
+			DATETRUNC(month,CT.InvoiceDate) as DATE_MONTH 
+			FROM Sales.Customers ST join Sales.Invoices as CT on ST.CustomerID=CT.CustomerID
+			GROUP BY ST.CustomerName,
+				YEAR(CT.InvoiceDate),
+				DATETRUNC(month,CT.InvoiceDate)) AS Data
+	PIVOT (SUM(Data.Quantity) FOR CustomerName IN ('+@CustomerName +')) as pivt
+	Order by DATE_MONTH'
+
+SELECT @dml
+
+EXEC sp_executesql @dml
