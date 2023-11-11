@@ -1,21 +1,16 @@
 
 Занятие "08 - Выборки из XML и JSON полей".
-
 Задания выполняются с использованием базы данных WideWorldImporters.
-
 Бэкап БД можно скачать отсюда:
 https://github.com/Microsoft/sql-server-samples/releases/tag/wide-world-importers-v1.0
 Нужен WideWorldImporters-Full.bak
-
 Описание WideWorldImporters от Microsoft:
 * https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-what-is
 * https://docs.microsoft.com/ru-ru/sql/samples/wide-world-importers-oltp-database-catalog
 */
-
 -- ---------------------------------------------------------------------------
 -- Задание - написать выборки для получения указанных ниже данных.
 -- ---------------------------------------------------------------------------
-
 USE WideWorldImporters;
 
 /*
@@ -28,6 +23,7 @@ USE WideWorldImporters;
 
 
 /*
+---------ЗАДАНИЕ 1------------------------------------------------------------------------------------------------------------------------------------------------
 1. В личном кабинете есть файл StockItems.xml.
 Это данные из таблицы Warehouse.StockItems.
 Преобразовать эти данные в плоскую таблицу с полями, аналогичными Warehouse.StockItems.
@@ -170,8 +166,6 @@ SET @x = (
   SELECT * FROM OPENROWSET
   (BULK 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\StockItems.xml',
    SINGLE_CLOB) AS d);
-
-
 SELECT 
 	@x.query('(/StockItems/Item/SupplierID)') AS [SupplierID],
 	   @x.value('(/StockItems/Item/SupplierID)[1]', 'int') AS [SupplierID],
@@ -183,8 +177,6 @@ SELECT
 		@x.value('(/StockItems/Item/IsChillerStock)[1]', 'BIT') AS [IsChillerStock],
 		@x.value('(/StockItems/Item/TaxRate)[1]', 'DECIMAL(18, 2)') AS [TaxRate],
 		@x.value('(/StockItems/Item/UnitPrice)[1]', 'DECIMAL(18, 2)') AS [UnitPrice]
-	
-
 DROP TABLE IF EXISTS #TempStockItems2;
 -- Создание временной таблицы для XML данных
 CREATE TABLE #TempStockItems2 (
@@ -221,10 +213,10 @@ GO
 -- nodes(XQuery/XPath) - возвращает представление строк для XML
 -- Можно использовать вместо OPENXML
 
-
-
+-----------------------------------------ЗАДАНИЕ 2-----------------------------------------------------------------------------------------------------------------
 --2. Выгрузить данные из таблицы StockItems в такой же xml-файл, как StockItems.xml
 
+-----------------------------------------ПРОВЕРЯЕМ РАБОТУ BCP-------------------------------
 EXEC sp_configure 'show advanced options', 1;
 GO
 
@@ -236,67 +228,12 @@ GO
 
 RECONFIGURE;
 GO
+----------------------------------------ЗАГРУЖАЕМ ДАННЫЕ ИЗ ТАБЛИЦЫ БААЗЫ ДАННЫХ В XML ФАЙЛ----------------------------
+---прописываем все в одну строку без переносов и от администратора
+EXEC master..xp_cmdshell 'bcp "SELECT StockItemName AS ""StockItem/StockItemName"", SupplierID AS ""StockItem/SupplierID"", UnitPackageID AS ""StockItem/UnitPackageID"", OuterPackageID AS ""StockItem/OuterPackageID"", QuantityPerOuter AS ""StockItem/QuantityPerOuter"", TypicalWeightPerUnit AS ""StockItem/TypicalWeightPerUnit"", LeadTimeDays AS ""StockItem/LeadTimeDays"", IsChillerStock AS ""StockItem/IsChillerStock"", TaxRate AS ""StockItem/TaxRate"", UnitPrice AS ""StockItem/UnitPrice"" FROM [WideWorldImporters].[Warehouse].[StockItems] FOR XML PATH(''StockItemsXML''), ROOT(''StockItems'')" queryout D:\Education\OTUS_SQL\StockItemfull.xml -T -w -t, -S DESKTOP-TFUHS64';
 
-GO
--- Создание XML файла с данными из таблицы StockItems
-DECLARE @xml NVARCHAR(MAX);
-
--- Выбор данных из таблицы StockItems и формирование XML
-SELECT 
-    StockItemName,
-    SupplierID,
-    UnitPackageID,
-    OuterPackageID,
-    QuantityPerOuter,
-    TypicalWeightPerUnit,
-    LeadTimeDays,
-    IsChillerStock,
-    TaxRate,
-    UnitPrice
-INTO #TempStockItems
-FROM Warehouse.StockItems;
-
--- Создание XML из временной таблицы
-SET @xml = (
-    SELECT
-        StockItemName AS 'StockItem/StockItemName',
-        SupplierID AS 'StockItem/SupplierID',
-        UnitPackageID AS 'StockItem/UnitPackageID',
-        OuterPackageID AS 'StockItem/OuterPackageID',
-        QuantityPerOuter AS 'StockItem/QuantityPerOuter',
-        TypicalWeightPerUnit AS 'StockItem/TypicalWeightPerUnit',
-        LeadTimeDays AS 'StockItem/LeadTimeDays',
-        IsChillerStock AS 'StockItem/IsChillerStock',
-        TaxRate AS 'StockItem/TaxRate',
-        UnitPrice AS 'StockItem/UnitPrice'
-    FROM #TempStockItems
-    FOR XML PATH('StockItemsXML'), ROOT('StockItems')
-);
---Проверим все ли записалось в переменную
-SELECT @xml
-
---SELECT *FROM #TempStockItems;
-
--- Сохранение XML в файл
-DECLARE @xmlFileName NVARCHAR(255) = 'c:\Users\Mila\Documents\SQL Server Management Studio\OTUS\Class10\Dafi.xml';
--- Использование bcp для экспорта данных в файл XML
-DECLARE @xmlDataString NVARCHAR(MAX);
--- Преобразование XML в строку
-SET @xmlDataString = CAST(@xml AS NVARCHAR(MAX));
-
-
--- Составление команды bcp для экспорта данных в XML
-DECLARE @bcpCommand NVARCHAR(4000);
-SET @bcpCommand = 'bcp "'+ @xmlDataString +' "out "' + @xmlFileName + '"-S DESKTOP-TFUHS64 -T -c ';
-
--- Выполнение команды bcp
-EXEC xp_cmdshell @bcpCommand;
--- Удаление временной таблицы
-DROP TABLE #TempStockItems;
---------------------------------------------ПОДСКАЖИТЕ ПОЧЕМУ УКАЗАННЫЙ КОД НЕ СОЗДАЕТ ФАЙЛ XML, ---НЕ ПОНИМАЮ
-
-/*
-3. В таблице Warehouse.StockItems в колонке CustomFields есть данные в JSON.
+------------------------------------ЗАДАНИЕ 3-----------------------------------------------------------------------------------------------------------------------
+/*3. В таблице Warehouse.StockItems в колонке CustomFields есть данные в JSON.
 Написать SELECT для вывода:
 - StockItemID
 - StockItemName
@@ -314,7 +251,7 @@ SELECT
 	JSON_VALUE(CustomFields, '$.Tags[1]') AS SecondtTag
 FROM Warehouse.StockItems
 
-
+----------------------------------------ЗАДАНИЕ 4-------------------------------------------------------------------------------------------------------------------
 /*
 4. Найти в StockItems строки, где есть тэг "Vintage".
 Вывести: 
