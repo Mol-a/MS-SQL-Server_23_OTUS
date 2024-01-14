@@ -1,0 +1,147 @@
+CREATE TABLE Region_directory
+(
+  ID_region INT NOT NULL,
+  FullName_region VARCHAR NOT NULL,
+  PRIMARY KEY (ID_region)
+);
+
+CREATE TABLE Industry_directory
+(
+  ID_industry INT NOT NULL,
+  FullName_industry VARCHAR NOT NULL,
+  PRIMARY KEY (ID_industry)
+);
+
+CREATE TABLE OrgPravoForm_directory
+(
+  ID_org_pravo_form INT NOT NULL,
+  FullName_org_pravo_form VARCHAR NOT NULL,
+  ShortName_OrgPravoForm VARCHAR NOT NULL,
+  PRIMARY KEY (ID_org_pravo_form)
+);
+
+CREATE TABLE Government_bodies_directory
+(
+  ID_government_bodies INT NOT NULL,
+  FullName_GovernmentBodies VARCHAR NOT NULL,
+  PRIMARY KEY (ID_government_bodies)
+);
+
+CREATE TABLE Organization_directory
+(
+  ID_organization INT NOT NULL,
+  UNP_organization INT NOT NULL,
+  FullName_organization VARCHAR(255) NOT NULL,
+  ShortName_organization VARCHAR(255) NOT NULL,
+  ID_org_pravo_form INT NOT NULL,
+  ID_government_bodies INT NOT NULL,
+  ID_industry INT NOT NULL,
+  ID_region INT NOT NULL,
+  PRIMARY KEY (ID_organization),
+  FOREIGN KEY (ID_org_pravo_form) REFERENCES OrgPravoForm_directory(ID_org_pravo_form),
+  FOREIGN KEY (ID_government_bodies) REFERENCES Government_bodies_directory(ID_government_bodies),
+  FOREIGN KEY (ID_industry) REFERENCES Industry_directory(ID_industry),
+  FOREIGN KEY (ID_region) REFERENCES Region_directory(ID_region)
+);
+
+CREATE TABLE Analytical_note
+(
+  Indicator_value INT NOT NULL,
+  Indicator_date DATE NOT NULL,
+  UNP_organization INT NOT NULL,
+  ID_analytical_note INT NOT NULL,
+  ID_organization INT NOT NULL,
+  PRIMARY KEY (ID_analytical_note),
+  FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization)
+);
+
+CREATE TABLE Monthly_indicators_for_month
+(
+  ID_line_code_file INT NOT NULL,
+  Indicator_date DATE NOT NULL,
+  Indicator_value INT NOT NULL,
+  ID_monthly_indicators_for_month INT NOT NULL,
+  ID_organization INT NOT NULL,
+  ID_SheetFile INT NOT NULL,
+  PRIMARY KEY (ID_monthly_indicators_for_month),
+  FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
+  FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
+);
+
+CREATE TABLE Cumulative_monthly_indicators
+(
+  ID_line_code_file INT NOT NULL,
+  Indicator_value INT NOT NULL,
+  Indicator_date DATE NOT NULL,
+  ID_cumulative_monthly_indicator INT NOT NULL,
+  ID_organization INT NOT NULL,
+  ID_SheetFile INT NOT NULL,
+  PRIMARY KEY (ID_cumulative_monthly_indicator),
+  FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
+  FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
+);
+
+CREATE TABLE Cumulative_quarterly_indicators
+(
+  ID_line_code_file INT NOT NULL,
+  Indicator_date INT NOT NULL,
+  Indicator_value INT NOT NULL,
+  ID_cumulative_quaterly_indicators INT NOT NULL,
+  ID_organization INT NOT NULL,
+  ID_SheetFile INT NOT NULL,
+  PRIMARY KEY (ID_cumulative_quaterly_indicators),
+  FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
+  FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
+);
+
+CREATE TABLE HistoryChanges
+(
+  Changes_date INT NOT NULL,
+  ID_HistoryChanges INT NOT NULL,
+  ID_line_code_file INT NOT NULL,
+  IndicatorValue_before_changes INT NOT NULL,
+  IndicatorValue_after_changes INT NOT NULL,
+  Value_before_changes_date INT NOT NULL,
+  ID_user INT NOT NULL,
+  ID_SheetFile INT NOT NULL,
+  ID_organization INT NOT NULL,
+  ID_indicators INT NOT NULL,
+  PRIMARY KEY (ID_HistoryChanges),
+  FOREIGN KEY (ID_user) REFERENCES User_directory(ID_user),
+  FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile),
+  FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
+  FOREIGN KEY (ID_indicators) REFERENCES Indicator_directory(ID_indicators)
+);
+
+CREATE TABLE Indicator_directory
+(
+  ID_indicators INT NOT NULL,
+  FullName_indicators VARCHAR(255) NOT NULL,
+  ID_line_code_file INT NOT NULL,
+  UnitMeasureIndicator_name INT NOT NULL,
+  ShortName_indicators VARCHAR(255) NOT NULL,
+  ID_SheetFile INT NOT NULL,
+  PRIMARY KEY (ID_indicators),
+  FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
+);
+
+CREATE TABLE User_directory
+(
+  ID_user INT NOT NULL,
+  NameUser INT NOT NULL,
+  Name_comp INT NOT NULL,
+  ID_HistoryChanges INT NOT NULL,
+  PRIMARY KEY (ID_user),
+  FOREIGN KEY (ID_HistoryChanges) REFERENCES HistoryChanges(ID_HistoryChanges)
+);
+
+CREATE TABLE SheetFile_directory
+(
+  ID_SheetFile INT NOT NULL,
+  SheetFile_name VARCHAR(255) NOT NULL,
+  ID_HistoryChanges INT NOT NULL,
+  ID_indicators INT NOT NULL,
+  PRIMARY KEY (ID_SheetFile),
+  FOREIGN KEY (ID_HistoryChanges) REFERENCES HistoryChanges(ID_HistoryChanges),
+  FOREIGN KEY (ID_indicators) REFERENCES Indicator_directory(ID_indicators)
+);
