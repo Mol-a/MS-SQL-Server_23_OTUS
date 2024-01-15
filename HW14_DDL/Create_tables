@@ -1,17 +1,38 @@
+Создание базы данных ТОП100 
+Тема проекта: разработка базы данных и BI-аналитики для анализа финансового состояния предприятий
+Данный код предназначен для создание базы данных и отношений по загрузке файлов-источников
+Есть файлы-источники, которые заполняют предприятия ежемесячно и предоставляют для загрузки и обработки. В каждом файле есть листы со своим перечнем показателей. 
+Есть листы с показателями, которые заполняются ежемесячно, а есть листы с квартальными показателями.
+Поэтому для оптимизации кол-ва таблиц решено создать сущности по показателям в привязке переодичности их заполнения, а также отдельный лист "Аналитическая записка", который будет
+загружаться в БД после предварительной агрегации по всем предприятиям. Также в качестве характеристик предусмотрено два главных справочника и несколько дополнительных. 
+В двух главных справочниках (справочник организации Organization_directory, справочник показателей Indicators_directory) присутствует связь один ко многим по первичному ключу. 
+
+
+--Удаляем Базу данных
+DROP DATABASE [TOP100]
+
+--Проверяем существует ли база, удаляем и создаем заново
+DROP DATABASE IF EXISTS TOP100
+CREATE DATABASE TOP100
+--Удаляем все таблицы если они есть
+DROP TABLE IF EXIST
+
+
+--Справочник регионов
 CREATE TABLE Region_directory
 (
   ID_region INT NOT NULL,
   FullName_region VARCHAR NOT NULL,
   PRIMARY KEY (ID_region)
 );
-
+--Справоник отраслей
 CREATE TABLE Industry_directory
 (
   ID_industry INT NOT NULL,
   FullName_industry VARCHAR NOT NULL,
   PRIMARY KEY (ID_industry)
 );
-
+--Справочник организационно-правовых форм
 CREATE TABLE OrgPravoForm_directory
 (
   ID_org_pravo_form INT NOT NULL,
@@ -19,14 +40,15 @@ CREATE TABLE OrgPravoForm_directory
   ShortName_OrgPravoForm VARCHAR NOT NULL,
   PRIMARY KEY (ID_org_pravo_form)
 );
-
+--Справочник органов управленич
 CREATE TABLE Government_bodies_directory
 (
   ID_government_bodies INT NOT NULL,
   FullName_GovernmentBodies VARCHAR NOT NULL,
   PRIMARY KEY (ID_government_bodies)
 );
-
+--Справочник организаций (главный справочник, в котором одному ID_ organization соответствует свой УНП, Полное имя организации, краткое имя организации,код организационно-правовой формы,
+--код органа управления, код отрасли, код региона расположения организации)
 CREATE TABLE Organization_directory
 (
   ID_organization INT NOT NULL,
@@ -44,9 +66,11 @@ CREATE TABLE Organization_directory
   FOREIGN KEY (ID_region) REFERENCES Region_directory(ID_region)
 );
 
+
+--Аналитическая записка (загружается с агрегированного файла по всем организациям. 
 CREATE TABLE Analytical_note
 (
-  Indicator_value INT NOT NULL,
+  Indicator_value NVARCHAR(MAX) NOT NULL,--тут будет текст аналитической записки
   Indicator_date DATE NOT NULL,
   UNP_organization INT NOT NULL,
   ID_analytical_note INT NOT NULL,
@@ -54,7 +78,7 @@ CREATE TABLE Analytical_note
   PRIMARY KEY (ID_analytical_note),
   FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization)
 );
-
+--Ежемесячные показатели за месяц
 CREATE TABLE Monthly_indicators_for_month
 (
   ID_line_code_file INT NOT NULL,
@@ -67,7 +91,7 @@ CREATE TABLE Monthly_indicators_for_month
   FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
   FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
 );
-
+-Ежемесячные показатели нарастающим итогом
 CREATE TABLE Cumulative_monthly_indicators
 (
   ID_line_code_file INT NOT NULL,
@@ -80,7 +104,7 @@ CREATE TABLE Cumulative_monthly_indicators
   FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
   FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
 );
-
+--Квартальные показатели 
 CREATE TABLE Cumulative_quarterly_indicators
 (
   ID_line_code_file INT NOT NULL,
@@ -93,7 +117,7 @@ CREATE TABLE Cumulative_quarterly_indicators
   FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
   FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
 );
-
+--История изменений значени показателей (таблица для отслеживания изменения организациями данных прошлых периодов в файлах предоставленных в отчетном периоде)
 CREATE TABLE HistoryChanges
 (
   Changes_date INT NOT NULL,
@@ -112,7 +136,8 @@ CREATE TABLE HistoryChanges
   FOREIGN KEY (ID_organization) REFERENCES Organization_directory(ID_organization),
   FOREIGN KEY (ID_indicators) REFERENCES Indicator_directory(ID_indicators)
 );
-
+--Справочник показателей (главный справочник, который связан с таблицами показателей (таблицами-фактов). Содержит наименование показателя, ид_строки в файле соотвествующего листа, код листа в файле, 
+--единицы измерения показателей (есть денежные, есть %)
 CREATE TABLE Indicator_directory
 (
   ID_indicators INT NOT NULL,
@@ -124,7 +149,7 @@ CREATE TABLE Indicator_directory
   PRIMARY KEY (ID_indicators),
   FOREIGN KEY (ID_SheetFile) REFERENCES SheetFile_directory(ID_SheetFile)
 );
-
+--Справочник пользователей
 CREATE TABLE User_directory
 (
   ID_user INT NOT NULL,
@@ -134,7 +159,7 @@ CREATE TABLE User_directory
   PRIMARY KEY (ID_user),
   FOREIGN KEY (ID_HistoryChanges) REFERENCES HistoryChanges(ID_HistoryChanges)
 );
-
+-Справочник листов в файле-исходнике
 CREATE TABLE SheetFile_directory
 (
   ID_SheetFile INT NOT NULL,
