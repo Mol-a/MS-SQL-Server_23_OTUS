@@ -1,0 +1,115 @@
+use WideWorldImporters
+@@Servername
+----создадим файловую группу
+ALTER DATABASE [WideWorldImporters] ADD FILEGROUP [YearData]
+GO
+
+--добавляем пустой файл  определенного размера БД
+ALTER DATABASE [WideWorldImporters] ADD FILE 
+( NAME = N'Years', FILENAME = N'd:\Education\OTUS_SQL\32 Секционирование\Yeardata.ndf' , 
+SIZE = 1097152KB , FILEGROWTH = 65536KB ) TO FILEGROUP [YearData]
+GO
+
+--создаем функцию партиционирования по годам - по умолчанию left!!
+CREATE PARTITION FUNCTION [fnYearPartition](DATE) AS RANGE RIGHT FOR VALUES
+('20160101','20170101','20180101','20190101','20200101', '20210101',
+ '20220101', '20230101', '20240101', '20250101');																																																									
+GO
+
+
+-- партиционируем, используя созданную нами функцию
+CREATE PARTITION SCHEME [schmYearPartition] AS PARTITION [fnYearPartition] 
+ALL TO ([YearData])
+GO
+
+SELECT count(*) 
+FROM Sales.Orders;
+
+--создаем наши секционированные таблицы
+SELECT * INTO Sales.OrdersPartitioned
+FROM Sales.Orders;
+
+--C помощью мастера созданный скриптт по секционированию запускаем
+
+USE [WideWorldImporters]
+GO
+BEGIN TRANSACTION
+CREATE CLUSTERED INDEX [ClusteredIndex_on_schmYearPartition_638415314332625505] ON [Sales].[OrdersPartitioned]
+(
+	[OrderDate]
+)WITH (SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF) ON [schmYearPartition]([OrderDate])
+
+
+DROP INDEX [ClusteredIndex_on_schmYearPartition_638415314332625505] ON [Sales].[OrdersPartitioned]
+
+COMMIT TRANSACTION
+
+--смотрим какие таблицы у нас партиционированы
+select distinct t.name
+from sys.partitions p
+inner join sys.tables t
+	on p.object_id = t.object_id
+where p.partition_number <> 1
+
+--смотрим как конкретно по диапазонам уехали данные
+SELECT  $PARTITION.fnYearPartition(OrderDate) AS Partition
+		, COUNT(*) AS [COUNT]
+		, MIN(OrderDate)
+		,MAX(OrderDate) 
+FROM Sales.OrdersPartitioned
+GROUP BY $PARTITION.fnYearPartition(OrderDate) 
+ORDER BY Partition ;  
+
+
+--1	63978	2013-01-01	2015-12-31
+--2	9617	2016-01-01	2016-05-31
+
+--смерджим пустые секции (это 2017,2018,2019,2021,2022,2023,2024,2025)
+Alter Partition Function fnYearPartition() MERGE RANGE ('20170101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20180101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20190101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20200101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20210101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20220101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20230101');
+Alter Partition Function fnYearPartition() MERGE RANGE ('20240101');
+
+--разделим 1 секцию на 2 секции
+
+Alter Partition Function fnYearPartition() SPLIT RANGE ('20140101');
+--1	19450	2013-01-01	2013-12-31
+--2	44528	2014-01-01	2015-12-31
+--3	9617	2016-01-01	2016-05-31
+
+--Alter Partition Function fnYearPartition() SPLIT RANGE ('20150101');
+--нельзя разделить, тк. нужно переключить схему  хранения для последующих партиций
+
+-- переключить схему хранения для последующих партиций
+ALTER PARTITION SCHEME [schmYearPartition]  
+NEXT USED [YearData]; 
+
+--теперь еще раз пробуем
+Alter Partition Function fnYearPartition() SPLIT RANGE ('20150101');
+--1	19450	2013-01-01	2013-12-31
+--2	21199	2014-01-01	2014-12-31
+--3	23329	2015-01-01	2015-12-31
+--4	9617	2016-01-01	2016-05-31
+
+--можно добиться еще полного равномерного распределения  (по попалам кажду секцию разюить)
+
+Alter Partition Function fnYearPartition() SPLIT RANGE ('20130701');
+
+--
+Alter Partition Function fnYearPartition() SPLIT RANGE ('20140701');
+
+--
+Alter Partition Function fnYearPartition() SPLIT RANGE ('20150701');
+
+--В итоге получили 7 секций
+--1	9675	2013-01-01	2013-06-29
+--2	9775	2013-07-01	2013-12-31
+--3	10449	2014-01-01	2014-06-30
+--4	10750	2014-07-01	2014-12-31
+--5	11512	2015-01-01	2015-06-30
+--6	11817	2015-07-01	2015-12-31
+--7	9617	2016-01-01	2016-05-31
